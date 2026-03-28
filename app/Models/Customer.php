@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use App\Models\CustomerDeal;
 
 class Customer extends Model
 {
@@ -74,9 +75,7 @@ class Customer extends Model
 
     public function latestActivity(): HasOne
     {
-        return $this->hasOne(CustomerActivity::class)
-            ->where('type', 'note')
-            ->latestOfMany('activity_time');
+        return $this->hasOne(CustomerActivity::class)->latestOfMany('activity_time');
     }
 
     public function viewings(): HasMany
@@ -102,4 +101,10 @@ class Customer extends Model
                 });
         });
     }
+   public function deals(): HasMany
+    {
+        return $this->hasMany(CustomerDeal::class)->latest();
+    }
+
+
 }

@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\LeadSourceController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ViewingController;
+use App\Http\Controllers\Api\CustomerDealController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
@@ -27,6 +28,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/customers/{customer}/activities', [CustomerActivityController::class, 'store']);
     Route::post('/customers/{customer}/viewings', [ViewingController::class, 'store']);
     Route::put('/customers/{customer}/toggle-priority', [CustomerController::class, 'togglePriority']);
+    Route::post('/customers/{customer}/close-deal', [CustomerDealController::class, 'store']);
 
     Route::get('/properties', [PropertyController::class, 'index']);
     Route::post('/properties', [PropertyController::class, 'store']);
