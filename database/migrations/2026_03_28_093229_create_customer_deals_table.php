@@ -10,19 +10,27 @@ return new class extends Migration
     {
         Schema::create('customer_deals', function (Blueprint $table) {
             $table->id();
+
             $table->foreignId('customer_id')->constrained('customers')->cascadeOnDelete();
             $table->foreignId('created_by')->constrained('users')->cascadeOnDelete();
+            $table->foreignId('closer_user_id')->constrained('users')->cascadeOnDelete();
 
-            $table->string('contract_code')->nullable();
+            $table->string('project_code')->nullable();
             $table->string('building_name');
             $table->string('address')->nullable();
+            $table->string('floor')->nullable();
+
             $table->decimal('area', 12, 2)->nullable();
-            $table->decimal('monthly_revenue', 15, 2);
-            $table->integer('lease_term_months')->nullable();
-            $table->date('signed_date')->nullable();
-            $table->date('start_date')->nullable();
-            $table->string('status', 30)->default('won');
+            $table->decimal('rental_price', 15, 2)->nullable();
+            $table->integer('contract_term_months')->nullable();
+
+            $table->date('first_payment_date')->nullable();
+            $table->decimal('brokerage_fee', 15, 2)->nullable();
+
             $table->text('note')->nullable();
+            $table->string('status', 30)->default('won');
+            $table->timestamp('signed_at')->nullable();
+            $table->date('deposit_date')->nullable();
 
             $table->timestamps();
         });

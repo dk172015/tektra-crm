@@ -10,14 +10,20 @@ use Illuminate\Http\Request;
 
 class CustomerActivityController extends Controller
 {
-    public function __construct(
-        private CustomerWarningService $warningService
-    ) {
+    public function __construct(private CustomerWarningService $warningService) {
     }
 
     public function store(Request $request, Customer $customer): JsonResponse
     {
         $this->authorize('update', $customer);
+        if (
+            in_array($customer->status, ['contracted', 'lost'], true) &&
+            !$request->user()->isAdmin()
+        ) {
+            return response()->json([
+                'message' => 'Khách hàng ở trạng thái đã chốt hoặc mất khách, sale chỉ được xem.'
+            ], 403);
+        }
 
         $validated = $request->validate([
             'type' => ['required', 'string', 'max:50'],

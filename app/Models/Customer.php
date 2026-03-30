@@ -101,9 +101,13 @@ class Customer extends Model
                 });
         });
     }
-   public function deals(): HasMany
+    public function deals()
     {
         return $this->hasMany(CustomerDeal::class)->latest();
+    }
+    public function losses()
+    {
+        return $this->hasMany(CustomerLoss::class)->latest();
     }
 
 

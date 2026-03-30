@@ -18,6 +18,14 @@ class ViewingController extends Controller
     public function store(Request $request, Customer $customer): JsonResponse
     {
         $this->authorize('update', $customer);
+        if (
+            in_array($customer->status, ['contracted', 'lost'], true) &&
+            !$request->user()->isAdmin()
+        ) {
+            return response()->json([
+                'message' => 'Khách hàng ở trạng thái đã chốt hoặc mất khách, sale chỉ được xem.'
+            ], 403);
+        }
 
         $validated = $request->validate([
             'property_id' => ['nullable', 'integer', 'exists:properties,id'],

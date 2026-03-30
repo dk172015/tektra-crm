@@ -23,6 +23,11 @@ class CustomerController extends Controller
         $this->authorize('viewAny', Customer::class);
 
         $user = $request->user();
+        $activeStatuses = ['new', 'consulting', 'viewing', 'negotiating', 'deposit'];
+        $closedStatuses = ['contracted', 'lost'];
+
+        $startOfMonth = now()->startOfMonth();
+        $endOfMonth = now()->endOfMonth();
 
         $query = Customer::query()
             ->with([
@@ -43,9 +48,27 @@ class CustomerController extends Controller
             ->orderByDesc('is_priority')
             ->orderByDesc('priority_marked_at')
             ->latest();
-
+            
+        if (!$request->filled('date_from') && !$request->filled('date_to') && !$request->filled('status')) {
+            $query->where(function ($q) use ($activeStatuses, $closedStatuses, $startOfMonth, $endOfMonth) {
+                $q->whereIn('status', $activeStatuses)
+                ->orWhere(function ($sub) use ($closedStatuses, $startOfMonth, $endOfMonth) {
+                    $sub->whereIn('status', $closedStatuses)
+                        ->whereBetween('updated_at', [$startOfMonth, $endOfMonth]);
+                });
+            });
+        }
         if ($request->filled('status')) {
-            $query->where('status', $request->string('status'));
+            $status = (string) $request->input('status');
+            $query->where('status', $status);
+
+            if (
+                in_array($status, ['contracted', 'lost'], true) &&
+                !$request->filled('date_from') &&
+                !$request->filled('date_to')
+            ) {
+                $query->whereBetween('updated_at', [$startOfMonth, $endOfMonth]);
+            }
         }
 
         if ($request->filled('lead_source_id')) {
@@ -340,6 +363,14 @@ class CustomerController extends Controller
     public function updateRequirement(Request $request, Customer $customer): JsonResponse
     {
         $this->authorize('update', $customer);
+        if (
+            in_array($customer->status, ['contracted', 'lost'], true) &&
+            !$request->user()->isAdmin()
+        ) {
+            return response()->json([
+                'message' => 'Khách hàng ở trạng thái đã chốt hoặc mất khách, sale chỉ được xem.'
+            ], 403);
+        }
 
         $validated = $request->validate([
             'preferred_location' => ['nullable', 'string', 'max:255'],
