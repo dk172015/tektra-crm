@@ -17,6 +17,14 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'avatar',
+        'phone',
+        'employee_code',
+        'job_title',
+        'department',
+        'gender',
+        'date_of_birth',
+        'address',
         'role',
         'is_active',
     ];
@@ -26,14 +34,12 @@ class User extends Authenticatable
         'remember_token',
     ];
 
-    protected function casts(): array
-    {
-        return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-            'is_active' => 'boolean',
-        ];
-    }
+    protected $casts = [
+        'email_verified_at' => 'datetime',
+        'password' => 'hashed',
+        'date_of_birth' => 'date',
+        'is_active' => 'boolean',
+    ];
 
     public function createdCustomers(): HasMany
     {
@@ -67,8 +73,18 @@ class User extends Authenticatable
         return $this->role === 'admin';
     }
 
+    public function isLeader(): bool
+    {
+        return $this->role === 'leader';
+    }
+
     public function isSale(): bool
     {
         return $this->role === 'sale';
+    }
+
+    public function isAccountant(): bool
+    {
+        return $this->role === 'accountant';
     }
 }
