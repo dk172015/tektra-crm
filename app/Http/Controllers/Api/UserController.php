@@ -277,13 +277,23 @@ class UserController extends Controller
             $squareSize
         );
 
-        $filename = 'avatars/' . Str::uuid() . '.jpg';
+        $directory = 'avatars';
+
+        if (!Storage::disk('public')->exists($directory)) {
+            Storage::disk('public')->makeDirectory($directory);
+        }
+
+        $filename = $directory . '/' . Str::uuid() . '.jpg';
         $fullPath = Storage::disk('public')->path($filename);
 
-        imagejpeg($targetImage, $fullPath, 82);
+        $saved = imagejpeg($targetImage, $fullPath, 82);
 
         imagedestroy($sourceImage);
         imagedestroy($targetImage);
+
+        if (!$saved) {
+            throw new \RuntimeException('Không lưu được file avatar: ' . $fullPath);
+        }
 
         return $filename;
     }
