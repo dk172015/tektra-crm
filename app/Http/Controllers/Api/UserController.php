@@ -48,6 +48,7 @@ class UserController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        $this->ensureAdmin($request);
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
@@ -90,6 +91,7 @@ class UserController extends Controller
 
     public function update(Request $request, User $user): JsonResponse
     {
+        $this->ensureAdmin($request);
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
@@ -143,6 +145,7 @@ class UserController extends Controller
 
     public function toggleStatus(User $user): JsonResponse
     {
+        $this->ensureAdmin($request);
         $user->update([
             'is_active' => !$user->is_active,
         ]);
@@ -296,5 +299,13 @@ class UserController extends Controller
         }
 
         return $filename;
+    }
+    private function ensureAdmin(Request $request): void
+    {
+        abort_unless(
+            $request->user() && $request->user()->role === 'admin',
+            403,
+            'Bạn không có quyền thực hiện thao tác này.'
+        );
     }
 }
