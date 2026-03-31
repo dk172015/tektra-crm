@@ -31,6 +31,12 @@ return new class extends Migration
             $table->string('status', 30)->default('won');
             $table->timestamp('signed_at')->nullable();
             $table->date('deposit_date')->nullable();
+            $table->boolean('has_vat')->default(false);
+            $table->decimal('vat_revenue', 15, 2)->nullable();
+            $table->decimal('back_fee', 15, 2)->nullable();
+
+            $table->decimal('net_revenue', 15, 2)->nullable();   // sau VAT
+            $table->decimal('final_revenue', 15, 2)->nullable(); // sau back
 
             $table->timestamps();
         });

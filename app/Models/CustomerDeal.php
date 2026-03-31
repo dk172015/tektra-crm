@@ -23,6 +23,11 @@ class CustomerDeal extends Model
         'note',
         'status',
         'signed_at',
+        'has_vat',
+        'vat_revenue',
+        'back_fee',
+        'net_revenue',
+        'final_revenue',
     ];
 
     protected $casts = [
@@ -31,6 +36,11 @@ class CustomerDeal extends Model
         'brokerage_fee' => 'decimal:2',
         'first_payment_date' => 'date',
         'signed_at' => 'datetime',
+        'has_vat' => 'boolean',
+        'vat_revenue' => 'decimal:2',
+        'back_fee' => 'decimal:2',
+        'net_revenue' => 'decimal:2',
+        'final_revenue' => 'decimal:2',
     ];
 
     public function customer(): BelongsTo

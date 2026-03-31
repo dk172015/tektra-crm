@@ -26,8 +26,20 @@ class CustomerDealController extends Controller
             'brokerage_fee' => ['nullable', 'numeric', 'min:0'],
             'note' => ['nullable', 'string'],
             'closer_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'has_vat' => ['required', 'boolean'],
+            'vat_revenue' => ['nullable', 'numeric', 'min:0'],
+            'back_fee' => ['nullable', 'numeric', 'min:0'],
         ]);
+        $hasVat = (bool) $validated['has_vat'];
+        $brokerage = $validated['brokerage_fee'] ?? 0;
+        $vatRevenue = $validated['vat_revenue'] ?? null;
+        $backFee = $validated['back_fee'] ?? 0;
 
+        $netRevenue = $hasVat
+            ? ($vatRevenue ?? 0)
+            : $brokerage;
+
+        $finalRevenue = $netRevenue - $backFee;
         $actor = $request->user();
 
         $closerUserId = $actor->isAdmin()
@@ -54,6 +66,11 @@ class CustomerDealController extends Controller
             'first_payment_date' => $validated['first_payment_date'] ?? null,
             'brokerage_fee' => $validated['brokerage_fee'] ?? null,
             'note' => $validated['note'] ?? null,
+            'has_vat' => $hasVat,
+            'vat_revenue' => $vatRevenue,
+            'back_fee' => $backFee,
+            'net_revenue' => $netRevenue,
+            'final_revenue' => $finalRevenue,
             'status' => 'won',
             'signed_at' => now(),
         ]);
@@ -77,7 +94,12 @@ class CustomerDealController extends Controller
             $deal->deposit_date ? 'Ngày đặt cọc: ' . $deal->deposit_date->format('d/m/Y') : null,
             $deal->first_payment_date ? 'Thanh toán kỳ đầu: ' . $deal->first_payment_date->format('d/m/Y') : null,
         ];
+        $hasVat = (bool) $validated['has_vat'];
+        $brokerage = $validated['brokerage_fee'] ?? 0;
+        $vatRevenue = $validated['vat_revenue'] ?? null;
+        $backFee = $validated['back_fee'] ?? 0;
 
+        
         $content = implode('. ', array_filter($summaryParts));
         if ($content !== '') {
             $content .= '.';
@@ -137,7 +159,7 @@ class CustomerDealController extends Controller
     public function update(Request $request, Customer $customer): JsonResponse
     {
         $this->authorize('update', $customer);
-
+        
         if (!$request->user()->isAdmin()) {
             return response()->json([
                 'message' => 'Chỉ admin mới được sửa thông tin hợp đồng.',
@@ -165,7 +187,20 @@ class CustomerDealController extends Controller
             'brokerage_fee' => ['nullable', 'numeric', 'min:0'],
             'closer_user_id' => ['required', 'integer', 'exists:users,id'],
             'note' => ['nullable', 'string'],
+            'has_vat' => ['required', 'boolean'],
+            'vat_revenue' => ['nullable', 'numeric', 'min:0'],
+            'back_fee' => ['nullable', 'numeric', 'min:0'],
         ]);
+        $hasVat = (bool) $validated['has_vat'];
+        $brokerage = $validated['brokerage_fee'] ?? 0;
+        $vatRevenue = $validated['vat_revenue'] ?? null;
+        $backFee = $validated['back_fee'] ?? 0;
+
+        $netRevenue = $hasVat
+            ? ($vatRevenue ?? 0)
+            : $brokerage;
+
+        $finalRevenue = $netRevenue - $backFee;
 
         $deal->update([
             'project_code' => $validated['project_code'] ?? null,
@@ -180,6 +215,11 @@ class CustomerDealController extends Controller
             'brokerage_fee' => $validated['brokerage_fee'] ?? null,
             'closer_user_id' => $validated['closer_user_id'],
             'note' => $validated['note'] ?? null,
+            'has_vat' => $hasVat,
+            'vat_revenue' => $vatRevenue,
+            'back_fee' => $backFee,
+            'net_revenue' => $netRevenue,
+            'final_revenue' => $finalRevenue,
         ]);
 
         $customer->activities()->create([
