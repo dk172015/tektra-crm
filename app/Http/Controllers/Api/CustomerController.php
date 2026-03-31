@@ -278,10 +278,24 @@ class CustomerController extends Controller
         ]);
 
         $oldStatus = $customer->status;
+        $newStatus = $validated['status'];
+
+        if (
+            in_array($oldStatus, ['contracted', 'lost'], true) &&
+            !$request->user()->isAdmin()
+        ) {
+            return response()->json([
+                'message' => 'Chỉ admin mới được thay đổi trạng thái của khách hàng đã chốt hoặc mất khách.'
+            ], 403);
+        }
+
+        $this->cleanupClosedDataWhenStatusChanged($customer, $oldStatus, $newStatus);
 
         $customer->update([
-            'status' => $validated['status'],
+            'status' => $newStatus,
         ]);
+
+        $this->logClosedDataCleanup($customer, $request->user()->id, $oldStatus, $newStatus);
 
         if ($oldStatus !== $validated['status']) {
             $customer->activities()->create([
@@ -433,5 +447,44 @@ class CustomerController extends Controller
                 'priorityMarker:id,name',
             ]),
         ]);
+    }
+    private function cleanupClosedDataWhenStatusChanged(Customer $customer, string $oldStatus, string $newStatus): void
+    {
+        if ($oldStatus === $newStatus) {
+            return;
+        }
+
+        if ($oldStatus === 'contracted' && $newStatus !== 'contracted') {
+            $customer->deals()->delete();
+        }
+
+        if ($oldStatus === 'lost' && $newStatus !== 'lost') {
+            $customer->losses()->delete();
+        }
+    }
+
+    private function logClosedDataCleanup(Customer $customer, int $userId, string $oldStatus, string $newStatus): void
+    {
+        if ($oldStatus === $newStatus) {
+            return;
+        }
+
+        if ($oldStatus === 'contracted' && $newStatus !== 'contracted') {
+            $customer->activities()->create([
+                'user_id' => $userId,
+                'type' => 'deal_removed',
+                'content' => 'Đã xóa dữ liệu hợp đồng do chuyển khách khỏi trạng thái contracted.',
+                'activity_time' => now(),
+            ]);
+        }
+
+        if ($oldStatus === 'lost' && $newStatus !== 'lost') {
+            $customer->activities()->create([
+                'user_id' => $userId,
+                'type' => 'loss_removed',
+                'content' => 'Đã xóa dữ liệu mất khách do chuyển khách khỏi trạng thái lost.',
+                'activity_time' => now(),
+            ]);
+        }
     }
 }
