@@ -15,6 +15,9 @@ class CustomerLoss extends Model
         'lost_price',
         'lost_at',
         'note',
+        'recreated_customer_id',
+        'recreated_at',
+        'recreated_by',
     ];
 
     protected $casts = [
@@ -30,5 +33,9 @@ class CustomerLoss extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+    public function recreatedCustomer()
+    {
+        return $this->belongsTo(Customer::class, 'recreated_customer_id');
     }
 }

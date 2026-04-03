@@ -9,6 +9,9 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ViewingController;
 use App\Http\Controllers\Api\CustomerDealController;
 use App\Http\Controllers\Api\CustomerLossController;
+use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\RevenueAnalyticsController;
+use App\Http\Controllers\Api\ReportController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
@@ -34,6 +37,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/customers/{customer}/deal', [CustomerDealController::class, 'show']);
     Route::put('/customers/{customer}/deal', [CustomerDealController::class, 'update']);
 
+    Route::get('/customer-deals', [CustomerDealController::class, 'index']);
+    Route::get('/customer-deals/{deal}', [CustomerDealController::class, 'detail']);
+    Route::post('/customer-deals/{deal}/create-new-customer', [CustomerDealController::class, 'createNewCustomer']);
+
+    Route::get('/customer-losses', [CustomerLossController::class, 'index']);
+    Route::get('/customer-losses/{loss}', [CustomerLossController::class, 'detail']);
+    Route::post('/customer-losses/{loss}/create-new-customer', [CustomerLossController::class, 'createNewCustomer']);
+
     Route::post('/customers/{customer}/mark-lost', [CustomerLossController::class, 'store']);
     Route::get('/customers/{customer}/loss', [CustomerLossController::class, 'show']);
     Route::put('/customers/{customer}/loss', [CustomerLossController::class, 'update']);
@@ -48,4 +59,34 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/profile', [UserController::class, 'profile']);
     Route::post('/profile', [UserController::class, 'updateProfile']);
+
+    Route::get('/dashboard/summary', [DashboardController::class, 'summary']);
+    Route::get('/dashboard/revenue-daily', [DashboardController::class, 'revenueDaily']);
+    Route::get('/dashboard/revenue-by-sale', [DashboardController::class, 'revenueBySale']);
+    Route::get('/dashboard/customers-by-sale', [DashboardController::class, 'customersBySale']);
+    Route::get('/dashboard/pipeline-result', [DashboardController::class, 'pipelineResult']);
+    Route::get('/dashboard/top-sale', [DashboardController::class, 'topSale']);
+    Route::get('/dashboard/my-rank', [DashboardController::class, 'myRank']);
+    Route::get('/dashboard/conversion-by-sale', [DashboardController::class, 'conversionBySale']);
+    Route::get('/dashboard/source-performance', [DashboardController::class, 'sourcePerformance']);
+    Route::get('/dashboard/building-performance', [DashboardController::class, 'buildingPerformance']);
+    Route::get('/dashboard/recycle-leads', [DashboardController::class, 'recycleLeads']);
+    Route::get('/dashboard/aging-pipeline', [DashboardController::class, 'agingPipeline']);
+
+    Route::get('/analytics/revenue/summary', [RevenueAnalyticsController::class, 'summary']);
+    Route::get('/analytics/revenue/trend', [RevenueAnalyticsController::class, 'trend']);
+    Route::get('/analytics/revenue/by-sale', [RevenueAnalyticsController::class, 'bySale']);
+    Route::get('/analytics/revenue/by-building', [RevenueAnalyticsController::class, 'byBuilding']);
+    Route::get('/analytics/revenue/by-source', [RevenueAnalyticsController::class, 'bySource']);
+    Route::get('/analytics/revenue/top-deals', [RevenueAnalyticsController::class, 'topDeals']);
+
+    Route::get('/reports/revenue/summary', [ReportController::class, 'revenueSummary']);
+    Route::get('/reports/revenue/by-period', [ReportController::class, 'revenueByPeriod']);
+    Route::get('/reports/revenue/by-sale', [ReportController::class, 'revenueBySale']);
+
+    Route::get('/reports/customers/summary', [ReportController::class, 'customerSummary']);
+    Route::get('/reports/customers/by-status', [ReportController::class, 'customerByStatus']);
+    Route::get('/reports/customers/by-sale', [ReportController::class, 'customerBySale']);
+
+    
 });

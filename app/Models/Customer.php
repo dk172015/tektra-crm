@@ -32,6 +32,12 @@ class Customer extends Model
         'is_priority',
         'priority_marked_at',
         'priority_marked_by',
+        'parent_customer_id',
+        'revived_from_type',
+        'revived_from_id',
+        'is_recycled_lead',
+        'recycled_at',
+        'recycled_by',
     ];
 
     protected $casts = [

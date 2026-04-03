@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Models\CustomerDeal;
+use Illuminate\Support\Facades\DB;
+
 
 class CustomerDealController extends Controller
 {
@@ -237,5 +240,138 @@ class CustomerDealController extends Controller
                 'closer:id,name',
             ]),
         ]);
+    }
+    public function index(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $perPage = max(1, min((int) $request->integer('per_page', 20), 100));
+        $keyword = trim((string) $request->input('keyword', ''));
+        $closerUserId = $request->input('closer_user_id');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+        $recreated = $request->input('recreated'); // 1 | 0 | null
+
+        $query = CustomerDeal::query()
+            ->with([
+                'customer:id,company_name,contact_name,phone,email,status',
+                'creator:id,name',
+                'closer:id,name',
+                'recreatedCustomer:id,company_name,contact_name',
+            ])
+            ->when(!$user->isAdmin(), function ($q) use ($user) {
+                $q->where('closer_user_id', $user->id);
+            })
+            ->when($keyword !== '', function ($q) use ($keyword) {
+                $q->where(function ($sub) use ($keyword) {
+                    $sub->where('project_code', 'like', "%{$keyword}%")
+                        ->orWhere('building_name', 'like', "%{$keyword}%")
+                        ->orWhere('address', 'like', "%{$keyword}%")
+                        ->orWhere('note', 'like', "%{$keyword}%")
+                        ->orWhereHas('customer', function ($customerQuery) use ($keyword) {
+                            $customerQuery->where('company_name', 'like', "%{$keyword}%")
+                                ->orWhere('contact_name', 'like', "%{$keyword}%")
+                                ->orWhere('phone', 'like', "%{$keyword}%")
+                                ->orWhere('email', 'like', "%{$keyword}%");
+                        });
+                });
+            })
+            ->when($user->isAdmin() && filled($closerUserId), function ($q) use ($closerUserId) {
+                $q->where('closer_user_id', $closerUserId);
+            })
+            ->when(filled($dateFrom), function ($q) use ($dateFrom) {
+                $q->whereDate('signed_at', '>=', $dateFrom);
+            })
+            ->when(filled($dateTo), function ($q) use ($dateTo) {
+                $q->whereDate('signed_at', '<=', $dateTo);
+            })
+            ->when($recreated !== null && $recreated !== '', function ($q) use ($recreated) {
+                if ((string) $recreated === '1') {
+                    $q->whereNotNull('recreated_customer_id');
+                } elseif ((string) $recreated === '0') {
+                    $q->whereNull('recreated_customer_id');
+                }
+            })
+            ->latest('id');
+
+        $rows = $query->paginate($perPage)->withQueryString();
+
+        return response()->json($rows);
+    }
+    public function detail(Request $request, CustomerDeal $deal): JsonResponse
+    {
+        $user = $request->user();
+
+        if (!$user->isAdmin() && (int) $deal->closer_user_id !== (int) $user->id) {
+            return response()->json([
+                'message' => 'Bạn không có quyền xem hợp đồng này.',
+            ], 403);
+        }
+
+        return response()->json([
+            'data' => $deal->load([
+                'customer',
+                'creator:id,name',
+                'closer:id,name',
+                'recreatedCustomer:id,company_name,contact_name,status',
+            ]),
+        ]);
+    }
+    public function createNewCustomer(Request $request, CustomerDeal $deal): JsonResponse
+    {
+        $user = $request->user();
+
+        if (!$user->isAdmin()) {
+            return response()->json([
+                'message' => 'Chỉ admin mới được tạo khách hàng mới từ hợp đồng.',
+            ], 403);
+        }
+
+        if ($deal->recreated_customer_id) {
+            return response()->json([
+                'message' => 'Hợp đồng này đã tạo khách hàng mới trước đó.',
+                'data' => [
+                    'recreated_customer_id' => $deal->recreated_customer_id,
+                ],
+            ], 422);
+        }
+
+        $sourceCustomer = $deal->customer;
+
+        $newCustomer = DB::transaction(function () use ($sourceCustomer, $deal, $user) {
+            $customer = Customer::create([
+                'parent_customer_id' => $sourceCustomer->id,
+                'revived_from_type' => 'deal',
+                'revived_from_id' => $deal->id,
+                'is_recycled_lead' => true,
+                'recycled_at' => now(),
+                'recycled_by' => $user->id,
+
+                'company_name' => $sourceCustomer->company_name,
+                'contact_name' => $sourceCustomer->contact_name ?: 'Chưa có tên liên hệ',
+                'phone' => $sourceCustomer->phone,
+                'email' => $sourceCustomer->email,
+                'lead_source_id' => $sourceCustomer->lead_source_id,
+                'source_detail' => $sourceCustomer->source_detail,
+                'campaign_name' => $sourceCustomer->campaign_name,
+                'status' => 'new',
+                'note' => $sourceCustomer->note,
+
+                'created_by' => $user->id,
+            ]);
+
+            $deal->update([
+                'recreated_customer_id' => $customer->id,
+                'recreated_at' => now(),
+                'recreated_by' => $user->id,
+            ]);
+
+            return $customer;
+        });
+
+        return response()->json([
+            'message' => 'Đã tạo khách hàng mới từ hợp đồng.',
+            'data' => $newCustomer,
+        ], 201);
     }
 }

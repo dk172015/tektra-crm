@@ -28,6 +28,9 @@ class CustomerDeal extends Model
         'back_fee',
         'net_revenue',
         'final_revenue',
+        'recreated_customer_id',
+        'recreated_at',
+        'recreated_by',
     ];
 
     protected $casts = [
@@ -56,5 +59,9 @@ class CustomerDeal extends Model
     public function closer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'closer_user_id');
+    }
+    public function recreatedCustomer()
+    {
+        return $this->belongsTo(Customer::class, 'recreated_customer_id');
     }
 }
