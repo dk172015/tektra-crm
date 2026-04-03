@@ -72,6 +72,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/dashboard/building-performance', [DashboardController::class, 'buildingPerformance']);
     Route::get('/dashboard/recycle-leads', [DashboardController::class, 'recycleLeads']);
     Route::get('/dashboard/aging-pipeline', [DashboardController::class, 'agingPipeline']);
+    Route::get('/dashboard/assigned-current', [DashboardController::class, 'assignedCurrent']);
+    Route::get('/dashboard/assigned-in-period', [DashboardController::class, 'assignedInPeriod']);
 
     Route::get('/analytics/revenue/summary', [RevenueAnalyticsController::class, 'summary']);
     Route::get('/analytics/revenue/trend', [RevenueAnalyticsController::class, 'trend']);
@@ -87,6 +89,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/reports/customers/summary', [ReportController::class, 'customerSummary']);
     Route::get('/reports/customers/by-status', [ReportController::class, 'customerByStatus']);
     Route::get('/reports/customers/by-sale', [ReportController::class, 'customerBySale']);
+   
 
     
 });

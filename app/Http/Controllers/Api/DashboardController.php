@@ -84,8 +84,7 @@ class DashboardController extends Controller
 
         $monthLostCustomers = (int) (clone $lossQuery)->count();
 
-        $assignmentQuery = $this->currentAssignmentsBase()
-            ->whereNotIn('customers.status', ['contracted', 'lost']);
+        $assignmentQuery = $this->currentAssignmentsBase();
 
         if (!$this->isPrivileged($user)) {
             $assignmentQuery->where('ca.user_id', $user->id);
@@ -108,13 +107,29 @@ class DashboardController extends Controller
         $redWarnings = (int) (clone $warningQuery)
             ->where('customers.warning_level', 'red')
             ->count();
+        $currentAssignedQuery = $this->currentAssignmentsBase();
 
+        if (!$this->isPrivileged($user)) {
+        $currentAssignedQuery->where('ca.user_id', $user->id);
+        }
+
+        $currentAssignedCustomers = (int) (clone $currentAssignedQuery)->count();
+
+        $assignedInPeriodQuery = DB::table('customer_assignments')
+            ->whereBetween('created_at', [$from, $to]);
+
+        if (!$this->isPrivileged($user)) {
+            $assignedInPeriodQuery->where('user_id', $user->id);
+        }
+
+        $assignedInPeriod = (int) (clone $assignedInPeriodQuery)->count();
         return response()->json([
+            'current_assigned_customers' => $currentAssignedCustomers,
+            'assigned_in_period' => $assignedInPeriod,
             'month_revenue' => $monthRevenue,
             'team_month_revenue' => $teamMonthRevenue,
             'month_won_customers' => $monthWonCustomers,
             'month_lost_customers' => $monthLostCustomers,
-            'my_assigned_customers' => $myAssignedCustomers,
             'yellow_warnings' => $yellowWarnings,
             'red_warnings' => $redWarnings,
             'date_from' => $from->toDateString(),
@@ -176,8 +191,7 @@ class DashboardController extends Controller
 
         $query = $this->currentAssignmentsBase()
             ->selectRaw('users.id as user_id, users.name as user_name')
-            ->selectRaw('COUNT(customers.id) as total_customers')
-            ->whereNotIn('customers.status', ['contracted', 'lost']);
+            ->selectRaw('COUNT(customers.id) as total_customers');
 
         if (!$this->isPrivileged($user)) {
             $query->where('ca.user_id', $user->id);
@@ -315,165 +329,205 @@ class DashboardController extends Controller
         ]);
     }
     public function conversionBySale(Request $request): JsonResponse
-{
-    $user = $request->user();
-    [$from, $to] = $this->monthRange($request);
+    {
+        $user = $request->user();
+        [$from, $to] = $this->monthRange($request);
 
-    $assignedSub = $this->currentAssignmentsBase()
-        ->selectRaw('users.id as user_id, users.name as user_name, COUNT(customers.id) as assigned_customers')
-        ->whereNotIn('customers.status', ['contracted', 'lost']);
+        $assignedSub = $this->currentAssignmentsBase()
+            ->selectRaw('users.id as user_id, users.name as user_name, COUNT(customers.id) as assigned_customers');
 
-    if (!$this->isPrivileged($user)) {
-        $assignedSub->where('ca.user_id', $user->id);
+        if (!$this->isPrivileged($user)) {
+            $assignedSub->where('ca.user_id', $user->id);
+        }
+
+        $assignedRows = $assignedSub
+            ->groupBy('users.id', 'users.name')
+            ->get()
+            ->keyBy('user_id');
+
+        $wonRows = DB::table('customer_deals')
+            ->join('users', 'users.id', '=', 'customer_deals.closer_user_id')
+            ->selectRaw('users.id as user_id, COUNT(customer_deals.id) as won_customers')
+            ->whereNotNull('customer_deals.deposit_date')
+            ->whereBetween('customer_deals.deposit_date', [$from->toDateString(), $to->toDateString()])
+            ->when(!$this->isPrivileged($user), fn ($q) => $q->where('customer_deals.closer_user_id', $user->id))
+            ->groupBy('users.id')
+            ->get()
+            ->keyBy('user_id');
+
+        $lostRows = DB::table('customer_losses')
+            ->join('users', 'users.id', '=', 'customer_losses.created_by')
+            ->selectRaw('users.id as user_id, COUNT(customer_losses.id) as lost_customers')
+            ->whereNotNull('customer_losses.lost_at')
+            ->whereBetween('customer_losses.lost_at', [$from, $to])
+            ->when(!$this->isPrivileged($user), fn ($q) => $q->where('customer_losses.created_by', $user->id))
+            ->groupBy('users.id')
+            ->get()
+            ->keyBy('user_id');
+
+        $result = collect($assignedRows)->map(function ($row, $userId) use ($wonRows, $lostRows) {
+            $assigned = (int) $row->assigned_customers;
+            $won = (int) ($wonRows[$userId]->won_customers ?? 0);
+            $lost = (int) ($lostRows[$userId]->lost_customers ?? 0);
+
+            return [
+                'user_id' => (int) $row->user_id,
+                'user_name' => $row->user_name,
+                'assigned_customers' => $assigned,
+                'won_customers' => $won,
+                'lost_customers' => $lost,
+                'conversion_rate' => $assigned > 0 ? round(($won / $assigned) * 100, 2) : 0,
+            ];
+        })->values()->sortByDesc('conversion_rate')->values();
+
+        return response()->json(['data' => $result]);
     }
 
-    $assignedRows = $assignedSub
-        ->groupBy('users.id', 'users.name')
-        ->get()
-        ->keyBy('user_id');
+    public function sourcePerformance(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        [$from, $to] = $this->monthRange($request);
 
-    $wonRows = DB::table('customer_deals')
-        ->join('users', 'users.id', '=', 'customer_deals.closer_user_id')
-        ->selectRaw('users.id as user_id, COUNT(customer_deals.id) as won_customers')
-        ->whereNotNull('customer_deals.deposit_date')
-        ->whereBetween('customer_deals.deposit_date', [$from->toDateString(), $to->toDateString()])
-        ->when(!$this->isPrivileged($user), fn ($q) => $q->where('customer_deals.closer_user_id', $user->id))
-        ->groupBy('users.id')
-        ->get()
-        ->keyBy('user_id');
+        $query = DB::table('customers')
+            ->leftJoin('lead_sources', 'lead_sources.id', '=', 'customers.lead_source_id')
+            ->leftJoin('customer_deals', function ($join) use ($from, $to) {
+                $join->on('customer_deals.customer_id', '=', 'customers.id')
+                    ->whereBetween('customer_deals.deposit_date', [$from->toDateString(), $to->toDateString()]);
+            })
+            ->selectRaw("COALESCE(lead_sources.name, 'Không rõ nguồn') as source_name")
+            ->selectRaw('COUNT(DISTINCT customers.id) as total_customers')
+            ->selectRaw('COUNT(DISTINCT customer_deals.id) as total_deals')
+            ->selectRaw('SUM(COALESCE(customer_deals.final_revenue, customer_deals.net_revenue, 0)) as revenue');
 
-    $lostRows = DB::table('customer_losses')
-        ->join('users', 'users.id', '=', 'customer_losses.created_by')
-        ->selectRaw('users.id as user_id, COUNT(customer_losses.id) as lost_customers')
-        ->whereNotNull('customer_losses.lost_at')
-        ->whereBetween('customer_losses.lost_at', [$from, $to])
-        ->when(!$this->isPrivileged($user), fn ($q) => $q->where('customer_losses.created_by', $user->id))
-        ->groupBy('users.id')
-        ->get()
-        ->keyBy('user_id');
+        if (!$this->isPrivileged($user)) {
+            $query->where('customers.created_by', $user->id);
+        }
 
-    $result = collect($assignedRows)->map(function ($row, $userId) use ($wonRows, $lostRows) {
-        $assigned = (int) $row->assigned_customers;
-        $won = (int) ($wonRows[$userId]->won_customers ?? 0);
-        $lost = (int) ($lostRows[$userId]->lost_customers ?? 0);
+        $rows = $query
+            ->groupBy('lead_sources.name')
+            ->orderByDesc('revenue')
+            ->get();
 
-        return [
-            'user_id' => (int) $row->user_id,
-            'user_name' => $row->user_name,
-            'assigned_customers' => $assigned,
-            'won_customers' => $won,
-            'lost_customers' => $lost,
-            'conversion_rate' => $assigned > 0 ? round(($won / $assigned) * 100, 2) : 0,
-        ];
-    })->values()->sortByDesc('conversion_rate')->values();
-
-    return response()->json(['data' => $result]);
-}
-
-public function sourcePerformance(Request $request): JsonResponse
-{
-    $user = $request->user();
-    [$from, $to] = $this->monthRange($request);
-
-    $query = DB::table('customers')
-        ->leftJoin('lead_sources', 'lead_sources.id', '=', 'customers.lead_source_id')
-        ->leftJoin('customer_deals', function ($join) use ($from, $to) {
-            $join->on('customer_deals.customer_id', '=', 'customers.id')
-                ->whereBetween('customer_deals.deposit_date', [$from->toDateString(), $to->toDateString()]);
-        })
-        ->selectRaw("COALESCE(lead_sources.name, 'Không rõ nguồn') as source_name")
-        ->selectRaw('COUNT(DISTINCT customers.id) as total_customers')
-        ->selectRaw('COUNT(DISTINCT customer_deals.id) as total_deals')
-        ->selectRaw('SUM(COALESCE(customer_deals.final_revenue, customer_deals.net_revenue, 0)) as revenue');
-
-    if (!$this->isPrivileged($user)) {
-        $query->where('customers.created_by', $user->id);
+        return response()->json(['data' => $rows]);
     }
 
-    $rows = $query
-        ->groupBy('lead_sources.name')
-        ->orderByDesc('revenue')
-        ->get();
+    public function buildingPerformance(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        [$from, $to] = $this->monthRange($request);
 
-    return response()->json(['data' => $rows]);
-}
+        $query = DB::table('customer_deals')
+            ->selectRaw("COALESCE(building_name, 'Chưa rõ') as building_name")
+            ->selectRaw('COUNT(id) as total_deals')
+            ->selectRaw('SUM(COALESCE(final_revenue, net_revenue, 0)) as revenue')
+            ->whereNotNull('deposit_date')
+            ->whereBetween('deposit_date', [$from->toDateString(), $to->toDateString()]);
 
-public function buildingPerformance(Request $request): JsonResponse
-{
-    $user = $request->user();
-    [$from, $to] = $this->monthRange($request);
+        if (!$this->isPrivileged($user)) {
+            $query->where('closer_user_id', $user->id);
+        }
 
-    $query = DB::table('customer_deals')
-        ->selectRaw("COALESCE(building_name, 'Chưa rõ') as building_name")
-        ->selectRaw('COUNT(id) as total_deals')
-        ->selectRaw('SUM(COALESCE(final_revenue, net_revenue, 0)) as revenue')
-        ->whereNotNull('deposit_date')
-        ->whereBetween('deposit_date', [$from->toDateString(), $to->toDateString()]);
+        $rows = $query
+            ->groupBy('building_name')
+            ->orderByDesc('revenue')
+            ->limit(10)
+            ->get();
 
-    if (!$this->isPrivileged($user)) {
-        $query->where('closer_user_id', $user->id);
+        return response()->json(['data' => $rows]);
     }
 
-    $rows = $query
-        ->groupBy('building_name')
-        ->orderByDesc('revenue')
-        ->limit(10)
-        ->get();
+    public function recycleLeads(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        [$from, $to] = $this->monthRange($request);
 
-    return response()->json(['data' => $rows]);
-}
+        $query = DB::table('customers')
+            ->selectRaw('revived_from_type')
+            ->selectRaw('COUNT(*) as total')
+            ->where('is_recycled_lead', 1)
+            ->whereBetween('recycled_at', [$from, $to]);
 
-public function recycleLeads(Request $request): JsonResponse
-{
-    $user = $request->user();
-    [$from, $to] = $this->monthRange($request);
+        if (!$this->isPrivileged($user)) {
+            $query->where('recycled_by', $user->id);
+        }
 
-    $query = DB::table('customers')
-        ->selectRaw('revived_from_type')
-        ->selectRaw('COUNT(*) as total')
-        ->where('is_recycled_lead', 1)
-        ->whereBetween('recycled_at', [$from, $to]);
+        $rows = $query
+            ->groupBy('revived_from_type')
+            ->get();
 
-    if (!$this->isPrivileged($user)) {
-        $query->where('recycled_by', $user->id);
+        return response()->json(['data' => $rows]);
     }
 
-    $rows = $query
-        ->groupBy('revived_from_type')
-        ->get();
+    public function agingPipeline(Request $request): JsonResponse
+    {
+        $user = $request->user();
 
-    return response()->json(['data' => $rows]);
-}
+        $query = $this->currentAssignmentsBase()
+            ->selectRaw('customers.status')
+            ->selectRaw("
+                SUM(CASE WHEN DATEDIFF(CURDATE(), customers.created_at) <= 7 THEN 1 ELSE 0 END) as bucket_7
+            ")
+            ->selectRaw("
+                SUM(CASE WHEN DATEDIFF(CURDATE(), customers.created_at) BETWEEN 8 AND 14 THEN 1 ELSE 0 END) as bucket_14
+            ")
+            ->selectRaw("
+                SUM(CASE WHEN DATEDIFF(CURDATE(), customers.created_at) BETWEEN 15 AND 30 THEN 1 ELSE 0 END) as bucket_30
+            ")
+            ->selectRaw("
+                SUM(CASE WHEN DATEDIFF(CURDATE(), customers.created_at) > 30 THEN 1 ELSE 0 END) as bucket_over_30
+            ")
+            ->whereNotIn('customers.status', ['contracted', 'lost']);
 
-public function agingPipeline(Request $request): JsonResponse
-{
-    $user = $request->user();
+        if (!$this->isPrivileged($user)) {
+            $query->where('ca.user_id', $user->id);
+        }
 
-    $query = $this->currentAssignmentsBase()
-        ->selectRaw('customers.status')
-        ->selectRaw("
-            SUM(CASE WHEN DATEDIFF(CURDATE(), customers.created_at) <= 7 THEN 1 ELSE 0 END) as bucket_7
-        ")
-        ->selectRaw("
-            SUM(CASE WHEN DATEDIFF(CURDATE(), customers.created_at) BETWEEN 8 AND 14 THEN 1 ELSE 0 END) as bucket_14
-        ")
-        ->selectRaw("
-            SUM(CASE WHEN DATEDIFF(CURDATE(), customers.created_at) BETWEEN 15 AND 30 THEN 1 ELSE 0 END) as bucket_30
-        ")
-        ->selectRaw("
-            SUM(CASE WHEN DATEDIFF(CURDATE(), customers.created_at) > 30 THEN 1 ELSE 0 END) as bucket_over_30
-        ")
-        ->whereNotIn('customers.status', ['contracted', 'lost']);
+        $rows = $query
+            ->groupBy('customers.status')
+            ->orderBy('customers.status')
+            ->get();
 
-    if (!$this->isPrivileged($user)) {
-        $query->where('ca.user_id', $user->id);
+        return response()->json(['data' => $rows]);
     }
+    public function assignedCurrent(Request $request): JsonResponse
+    {
+        $user = $request->user();
 
-    $rows = $query
-        ->groupBy('customers.status')
-        ->orderBy('customers.status')
-        ->get();
+        $query = $this->currentAssignmentsBase()
+            ->selectRaw('users.id as user_id, users.name as user_name')
+            ->selectRaw('COUNT(customers.id) as total_customers');
 
-    return response()->json(['data' => $rows]);
-}
+        if (!$this->isPrivileged($user)) {
+            $query->where('ca.user_id', $user->id);
+        }
+
+        $rows = $query
+            ->groupBy('users.id', 'users.name')
+            ->orderByDesc('total_customers')
+            ->get();
+
+        return response()->json(['data' => $rows]);
+    }
+    public function assignedInPeriod(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        [$from, $to] = $this->monthRange($request);
+
+        $query = DB::table('customer_assignments')
+            ->join('users', 'users.id', '=', 'customer_assignments.user_id')
+            ->selectRaw('users.id as user_id, users.name as user_name')
+            ->selectRaw('COUNT(customer_assignments.id) as assigned_in_period')
+            ->whereBetween('customer_assignments.created_at', [$from, $to]);
+
+        if (!$this->isPrivileged($user)) {
+            $query->where('customer_assignments.user_id', $user->id);
+        }
+
+        $rows = $query
+            ->groupBy('users.id', 'users.name')
+            ->orderByDesc('assigned_in_period')
+            ->get();
+
+        return response()->json(['data' => $rows]);
+    }
 }
