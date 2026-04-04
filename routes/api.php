@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\CustomerLossController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\RevenueAnalyticsController;
 use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\CustomerReportController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
@@ -90,6 +91,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/reports/customers/by-status', [ReportController::class, 'customerByStatus']);
     Route::get('/reports/customers/by-sale', [ReportController::class, 'customerBySale']);
    
+    Route::prefix('reports/customers')->group(function () {
+        Route::get('/summary', [CustomerReportController::class, 'summary']);
+        Route::get('/pipeline', [CustomerReportController::class, 'pipeline']);
+        Route::get('/by-sale', [CustomerReportController::class, 'bySale']);
+        Route::get('/assigned-in-period', [CustomerReportController::class, 'assignedInPeriod']);
+        Route::get('/conversion-by-sale', [CustomerReportController::class, 'conversionBySale']);
+        Route::get('/warning', [CustomerReportController::class, 'warning']);
+        Route::get('/aging', [CustomerReportController::class, 'aging']);
+        Route::get('/tabs', [CustomerReportController::class, 'tabData']);
+    });
 
     
 });
