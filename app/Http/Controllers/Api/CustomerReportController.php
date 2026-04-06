@@ -28,6 +28,36 @@ class CustomerReportController extends Controller
         return [$from, $to];
     }
 
+    private function selfFoundLeadSourceId(): ?int
+    {
+        return DB::table('lead_sources')
+            ->where('code', 'sales_self_gen')
+            ->value('id');
+    }
+
+    private function applyCustomerGroupFilter($query, Request $request, string $customerTable = 'customers')
+    {
+        $group = $request->input('customer_group');
+        $selfFoundId = $this->selfFoundLeadSourceId();
+
+        if (!$group || !$selfFoundId) {
+            return $query;
+        }
+
+        if ($group === 'self_found') {
+            $query->where("{$customerTable}.lead_source_id", $selfFoundId);
+        }
+
+        if ($group === 'company_lead') {
+            $query->where(function ($q) use ($customerTable, $selfFoundId) {
+                $q->whereNull("{$customerTable}.lead_source_id")
+                    ->orWhere("{$customerTable}.lead_source_id", '!=', $selfFoundId);
+            });
+        }
+
+        return $query;
+    }
+
     private function latestAssignmentIdsSubquery()
     {
         return DB::table('customer_assignments as ca1')
@@ -69,66 +99,69 @@ class CustomerReportController extends Controller
             $this->currentAssignmentsBase(),
             $request
         );
+        $this->applyCustomerGroupFilter($currentAssignedQuery, $request, 'customers');
 
         $processingQuery = $this->applySaleScope(
             $this->currentAssignmentsBase()->whereNotIn('customers.status', ['contracted', 'lost']),
             $request
         );
+        $this->applyCustomerGroupFilter($processingQuery, $request, 'customers');
 
         $assignedInPeriodQuery = DB::table('customer_assignments')
-            ->whereBetween('created_at', [$from, $to]);
+            ->join('customers', 'customers.id', '=', 'customer_assignments.customer_id')
+            ->whereBetween('customer_assignments.created_at', [$from, $to]);
 
         $user = $request->user();
         if (!$this->isPrivileged($user)) {
-            $assignedInPeriodQuery->where('user_id', $user->id);
+            $assignedInPeriodQuery->where('customer_assignments.user_id', $user->id);
         } elseif ($request->filled('sale_id')) {
-            $assignedInPeriodQuery->where('user_id', $request->input('sale_id'));
+            $assignedInPeriodQuery->where('customer_assignments.user_id', $request->input('sale_id'));
         }
+
+        $this->applyCustomerGroupFilter($assignedInPeriodQuery, $request, 'customers');
 
         $wonQuery = DB::table('customer_deals')
-            ->whereNotNull('deposit_date')
-            ->whereBetween('deposit_date', [$from->toDateString(), $to->toDateString()]);
+            ->join('customers', 'customers.id', '=', 'customer_deals.customer_id')
+            ->whereNotNull('customer_deals.deposit_date')
+            ->whereBetween('customer_deals.deposit_date', [$from->toDateString(), $to->toDateString()]);
 
         if (!$this->isPrivileged($user)) {
-            $wonQuery->where('closer_user_id', $user->id);
+            $wonQuery->where('customer_deals.closer_user_id', $user->id);
         } elseif ($request->filled('sale_id')) {
-            $wonQuery->where('closer_user_id', $request->input('sale_id'));
+            $wonQuery->where('customer_deals.closer_user_id', $request->input('sale_id'));
         }
+
+        $this->applyCustomerGroupFilter($wonQuery, $request, 'customers');
 
         $lostQuery = DB::table('customer_losses')
-            ->whereNotNull('lost_at')
-            ->whereBetween('lost_at', [$from, $to]);
+            ->join('customers', 'customers.id', '=', 'customer_losses.customer_id')
+            ->whereBetween('customer_losses.lost_at', [$from, $to]);
 
         if (!$this->isPrivileged($user)) {
-            $lostQuery->where('created_by', $user->id);
+            $lostQuery->where('customer_losses.created_by', $user->id);
         } elseif ($request->filled('sale_id')) {
-            $lostQuery->where('created_by', $request->input('sale_id'));
+            $lostQuery->where('customer_losses.created_by', $request->input('sale_id'));
         }
+
+        $this->applyCustomerGroupFilter($lostQuery, $request, 'customers');
 
         $warningQuery = $this->applySaleScope(
             $this->currentAssignmentsBase(),
             $request
         );
+        $this->applyCustomerGroupFilter($warningQuery, $request, 'customers');
 
-        $yellowWarnings = (clone $warningQuery)
-            ->where('customers.warning_level', 'yellow')
-            ->count();
-
-        $redWarnings = (clone $warningQuery)
-            ->where('customers.warning_level', 'red')
-            ->count();
-
-        $assignedInPeriod = (int) $assignedInPeriodQuery->count();
-        $wonInPeriod = (int) $wonQuery->count();
+        $assignedInPeriod = (int) (clone $assignedInPeriodQuery)->count();
+        $wonInPeriod = (int) (clone $wonQuery)->count();
 
         return response()->json([
-            'current_assigned_customers' => (int) $currentAssignedQuery->count(),
+            'current_assigned_customers' => (int) (clone $currentAssignedQuery)->count(),
             'assigned_in_period' => $assignedInPeriod,
-            'processing_customers' => (int) $processingQuery->count(),
+            'processing_customers' => (int) (clone $processingQuery)->count(),
             'won_in_period' => $wonInPeriod,
-            'lost_in_period' => (int) $lostQuery->count(),
-            'yellow_warnings' => $yellowWarnings,
-            'red_warnings' => $redWarnings,
+            'lost_in_period' => (int) (clone $lostQuery)->count(),
+            'yellow_warnings' => (int) (clone $warningQuery)->where('customers.warning_level', 'yellow')->count(),
+            'red_warnings' => (int) (clone $warningQuery)->where('customers.warning_level', 'red')->count(),
             'conversion_rate' => $assignedInPeriod > 0 ? round(($wonInPeriod / $assignedInPeriod) * 100, 2) : 0,
         ]);
     }
@@ -139,6 +172,8 @@ class CustomerReportController extends Controller
             $this->currentAssignmentsBase(),
             $request
         );
+
+        $this->applyCustomerGroupFilter($query, $request, 'customers');
 
         $rows = $query
             ->selectRaw('customers.status, COUNT(customers.id) as total')
@@ -151,13 +186,34 @@ class CustomerReportController extends Controller
 
     public function bySale(Request $request): JsonResponse
     {
+        $selfFoundId = $this->selfFoundLeadSourceId();
+
         $query = $this->applySaleScope(
             $this->currentAssignmentsBase(),
             $request
         );
 
+        $this->applyCustomerGroupFilter($query, $request, 'customers');
+
         $rows = $query
-            ->selectRaw('users.id as user_id, users.name as user_name, COUNT(customers.id) as total_customers')
+            ->selectRaw('users.id as user_id, users.name as user_name')
+            ->selectRaw('COUNT(customers.id) as total_customers')
+            ->selectRaw("
+                SUM(
+                    CASE
+                        WHEN customers.lead_source_id = {$selfFoundId} THEN 1
+                        ELSE 0
+                    END
+                ) as self_found_customers
+            ")
+            ->selectRaw("
+                SUM(
+                    CASE
+                        WHEN customers.lead_source_id IS NULL OR customers.lead_source_id != {$selfFoundId} THEN 1
+                        ELSE 0
+                    END
+                ) as company_lead_customers
+            ")
             ->groupBy('users.id', 'users.name')
             ->orderByDesc('total_customers')
             ->get();
@@ -171,6 +227,7 @@ class CustomerReportController extends Controller
 
         $query = DB::table('customer_assignments')
             ->join('users', 'users.id', '=', 'customer_assignments.user_id')
+            ->join('customers', 'customers.id', '=', 'customer_assignments.customer_id')
             ->whereBetween('customer_assignments.created_at', [$from, $to]);
 
         $user = $request->user();
@@ -179,6 +236,8 @@ class CustomerReportController extends Controller
         } elseif ($request->filled('sale_id')) {
             $query->where('customer_assignments.user_id', $request->input('sale_id'));
         }
+
+        $this->applyCustomerGroupFilter($query, $request, 'customers');
 
         $rows = $query
             ->selectRaw('users.id as user_id, users.name as user_name, COUNT(customer_assignments.id) as total_assigned')
@@ -196,10 +255,12 @@ class CustomerReportController extends Controller
 
         $assignedQuery = DB::table('customer_assignments')
             ->join('users', 'users.id', '=', 'customer_assignments.user_id')
+            ->join('customers', 'customers.id', '=', 'customer_assignments.customer_id')
             ->whereBetween('customer_assignments.created_at', [$from, $to]);
 
         $wonQuery = DB::table('customer_deals')
             ->join('users', 'users.id', '=', 'customer_deals.closer_user_id')
+            ->join('customers', 'customers.id', '=', 'customer_deals.customer_id')
             ->whereNotNull('customer_deals.deposit_date')
             ->whereBetween('customer_deals.deposit_date', [$from->toDateString(), $to->toDateString()]);
 
@@ -210,6 +271,9 @@ class CustomerReportController extends Controller
             $assignedQuery->where('customer_assignments.user_id', $request->input('sale_id'));
             $wonQuery->where('customer_deals.closer_user_id', $request->input('sale_id'));
         }
+
+        $this->applyCustomerGroupFilter($assignedQuery, $request, 'customers');
+        $this->applyCustomerGroupFilter($wonQuery, $request, 'customers');
 
         $assignedRows = $assignedQuery
             ->selectRaw('users.id as user_id, users.name as user_name, COUNT(customer_assignments.id) as assigned_count')
@@ -246,6 +310,8 @@ class CustomerReportController extends Controller
             $request
         );
 
+        $this->applyCustomerGroupFilter($base, $request, 'customers');
+
         $yellow = (clone $base)->where('customers.warning_level', 'yellow')->count();
         $red = (clone $base)->where('customers.warning_level', 'red')->count();
 
@@ -262,6 +328,8 @@ class CustomerReportController extends Controller
             $this->currentAssignmentsBase()->whereNotIn('customers.status', ['contracted', 'lost']),
             $request
         );
+
+        $this->applyCustomerGroupFilter($query, $request, 'customers');
 
         $rows = $query
             ->selectRaw('customers.status')
@@ -295,6 +363,8 @@ class CustomerReportController extends Controller
                     $query->where('customer_assignments.user_id', $request->input('sale_id'));
                 }
 
+                $this->applyCustomerGroupFilter($query, $request, 'customers');
+
                 $rows = $query
                     ->selectRaw('customer_assignments.id')
                     ->selectRaw('users.name as sale_name')
@@ -308,10 +378,11 @@ class CustomerReportController extends Controller
 
             case 'warning':
                 $query = $this->applySaleScope(
-                    $this->currentAssignmentsBase()
-                        ->whereIn('customers.warning_level', ['yellow', 'red']),
+                    $this->currentAssignmentsBase()->whereIn('customers.warning_level', ['yellow', 'red']),
                     $request
                 );
+
+                $this->applyCustomerGroupFilter($query, $request, 'customers');
 
                 $rows = $query
                     ->selectRaw('customers.id')
@@ -329,6 +400,8 @@ class CustomerReportController extends Controller
                     $this->currentAssignmentsBase()->where('customers.status', 'viewing'),
                     $request
                 );
+
+                $this->applyCustomerGroupFilter($query, $request, 'customers');
 
                 $rows = $query
                     ->selectRaw('customers.id')
@@ -354,6 +427,8 @@ class CustomerReportController extends Controller
                     $query->where('customer_deals.closer_user_id', $request->input('sale_id'));
                 }
 
+                $this->applyCustomerGroupFilter($query, $request, 'customers');
+
                 $rows = $query
                     ->selectRaw('customer_deals.id')
                     ->selectRaw('users.name as sale_name')
@@ -377,6 +452,8 @@ class CustomerReportController extends Controller
                 } elseif ($request->filled('sale_id')) {
                     $query->where('customer_losses.created_by', $request->input('sale_id'));
                 }
+
+                $this->applyCustomerGroupFilter($query, $request, 'customers');
 
                 $rows = $query
                     ->selectRaw('customer_losses.id')
