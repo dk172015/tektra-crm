@@ -34,9 +34,12 @@ class CustomerLossController extends Controller
         ]);
 
         $oldStatus = $customer->status;
-
+        
         $customer->update([
             'status' => 'lost',
+            'warning_level' => null,
+            'warning_locked_by_admin' => false,
+            'warning_updated_at' => now(),
         ]);
 
         $content = "Mất khách. Lý do: {$loss->reason}.";

@@ -82,6 +82,9 @@ class CustomerDealController extends Controller
 
         $customer->update([
             'status' => 'contracted',
+            'warning_level' => null,
+            'warning_locked_by_admin' => false,
+            'warning_updated_at' => now(),
         ]);
 
         $summaryParts = [

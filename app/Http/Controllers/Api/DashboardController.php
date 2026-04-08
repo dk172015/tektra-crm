@@ -395,13 +395,12 @@ class DashboardController extends Controller
 
     public function topSale(Request $request): JsonResponse
     {
-        $user = $request->user();
         [$from, $to] = $this->monthRange($request);
 
         $query = DB::table('customer_deals')
             ->join('customers', 'customers.id', '=', 'customer_deals.customer_id')
             ->join('users', 'users.id', '=', 'customer_deals.closer_user_id')
-            ->selectRaw('users.id as user_id, users.name as user_name')
+            ->selectRaw('users.id as user_id, users.name as user_name, users.avatar as avatar')
             ->selectRaw('COUNT(customer_deals.id) as total_deals')
             ->selectRaw('SUM(COALESCE(customer_deals.final_revenue, customer_deals.net_revenue, 0)) as revenue')
             ->whereNotNull('customer_deals.deposit_date')
@@ -409,14 +408,12 @@ class DashboardController extends Controller
 
         $this->applyCustomerGroupFilter($query, $request, 'customers');
 
-        if (!$this->isPrivileged($user)) {
-            $query->where('customer_deals.closer_user_id', $user->id);
-        } elseif ($request->filled('sale_id')) {
+        if ($request->filled('sale_id')) {
             $query->where('customer_deals.closer_user_id', $request->input('sale_id'));
         }
 
         $rows = $query
-            ->groupBy('users.id', 'users.name')
+            ->groupBy('users.id', 'users.name', 'users.avatar')
             ->orderByDesc('revenue')
             ->get();
 
@@ -435,6 +432,7 @@ class DashboardController extends Controller
             'data' => [
                 'user_id' => $top->user_id,
                 'user_name' => $top->user_name,
+                'avatar' => $top->avatar,
                 'total_deals' => (int) $top->total_deals,
                 'revenue' => (float) $top->revenue,
                 'contribution_percent' => $contributionPercent,
@@ -488,6 +486,58 @@ class DashboardController extends Controller
                 'total_deals' => (int) $row->total_deals,
                 'revenue' => (float) $row->revenue,
             ],
+        ]);
+    }
+    public function rankingSale(Request $request): JsonResponse
+    {
+        [$from, $to] = $this->monthRange($request);
+
+        $query = DB::table('customer_deals')
+            ->join('customers', 'customers.id', '=', 'customer_deals.customer_id')
+            ->join('users', 'users.id', '=', 'customer_deals.closer_user_id')
+            ->selectRaw('
+                users.id as user_id,
+                users.name as user_name,
+                users.avatar as avatar,
+                COUNT(customer_deals.id) as total_deals,
+                SUM(COALESCE(customer_deals.final_revenue, customer_deals.net_revenue, 0)) as revenue
+            ')
+            ->whereNotNull('customer_deals.deposit_date')
+            ->whereBetween('customer_deals.deposit_date', [$from->toDateString(), $to->toDateString()]);
+
+        $this->applyCustomerGroupFilter($query, $request, 'customers');
+
+        // Chỉ filter sale_id nếu user chọn rõ 1 sale.
+        // KHÔNG ép sale chỉ thấy mình ở leaderboard.
+        if ($request->filled('sale_id')) {
+            $query->where('customer_deals.closer_user_id', $request->input('sale_id'));
+        }
+
+        $rows = $query
+            ->groupBy('users.id', 'users.name', 'users.avatar')
+            ->orderByDesc('revenue')
+            ->get()
+            ->values();
+
+        $totalRevenue = (float) $rows->sum('revenue');
+
+        $ranked = $rows->map(function ($row, $index) use ($totalRevenue) {
+            return [
+                'rank' => $index + 1,
+                'user_id' => $row->user_id,
+                'user_name' => $row->user_name,
+                'avatar' => $row->avatar,
+                'total_deals' => (int) $row->total_deals,
+                'revenue' => (float) $row->revenue,
+                'percent' => $totalRevenue > 0
+                    ? round(($row->revenue / $totalRevenue) * 100, 2)
+                    : 0,
+            ];
+        });
+
+        return response()->json([
+            'data' => $ranked,
+            'total_revenue' => $totalRevenue,
         ]);
     }
 }

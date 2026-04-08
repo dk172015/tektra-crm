@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\RevenueAnalyticsController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\CustomerReportController;
+use App\Http\Controllers\Api\RevenueReportController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
@@ -68,6 +69,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/dashboard/pipeline-result', [DashboardController::class, 'pipelineResult']);
     Route::get('/dashboard/top-sale', [DashboardController::class, 'topSale']);
     Route::get('/dashboard/my-rank', [DashboardController::class, 'myRank']);
+    Route::get('/dashboard/ranking-sale', [DashboardController::class, 'rankingSale']);
     Route::get('/dashboard/conversion-by-sale', [DashboardController::class, 'conversionBySale']);
     Route::get('/dashboard/source-performance', [DashboardController::class, 'sourcePerformance']);
     Route::get('/dashboard/building-performance', [DashboardController::class, 'buildingPerformance']);
@@ -86,6 +88,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/reports/revenue/summary', [ReportController::class, 'revenueSummary']);
     Route::get('/reports/revenue/by-period', [ReportController::class, 'revenueByPeriod']);
     Route::get('/reports/revenue/by-sale', [ReportController::class, 'revenueBySale']);
+
+    Route::prefix('reports/revenue-new')->group(function () {
+        Route::get('/summary', [RevenueReportController::class, 'summary']);
+        Route::get('/deals', [RevenueReportController::class, 'deals']);
+    });
 
     Route::get('/reports/customers/summary', [ReportController::class, 'customerSummary']);
     Route::get('/reports/customers/by-status', [ReportController::class, 'customerByStatus']);
