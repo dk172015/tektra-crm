@@ -270,7 +270,7 @@ class DashboardController extends Controller
         $query = DB::table('customer_deals')
             ->join('customers', 'customers.id', '=', 'customer_deals.customer_id')
             ->selectRaw('customer_deals.deposit_date as label')
-            ->selectRaw('SUM(COALESCE(customer_deals.final_revenue, customer_deals.net_revenue, 0)) as revenue')
+            ->selectRaw('SUM(COALESCE(customer_deals.final_revenue, 0)) as revenue')
             ->whereNotNull('customer_deals.deposit_date')
             ->whereBetween('customer_deals.deposit_date', [$from->toDateString(), $to->toDateString()]);
 
@@ -300,7 +300,7 @@ class DashboardController extends Controller
             ->join('users', 'users.id', '=', 'customer_deals.closer_user_id')
             ->selectRaw('users.id as user_id, users.name as user_name')
             ->selectRaw('COUNT(customer_deals.id) as total_deals')
-            ->selectRaw('SUM(COALESCE(customer_deals.final_revenue, customer_deals.net_revenue, 0)) as revenue')
+            ->selectRaw('SUM(COALESCE(customer_deals.final_revenue, 0)) as revenue')
             ->whereNotNull('customer_deals.deposit_date')
             ->whereBetween('customer_deals.deposit_date', [$from->toDateString(), $to->toDateString()]);
 
@@ -402,7 +402,7 @@ class DashboardController extends Controller
             ->join('users', 'users.id', '=', 'customer_deals.closer_user_id')
             ->selectRaw('users.id as user_id, users.name as user_name, users.avatar as avatar')
             ->selectRaw('COUNT(customer_deals.id) as total_deals')
-            ->selectRaw('SUM(COALESCE(customer_deals.final_revenue, customer_deals.net_revenue, 0)) as revenue')
+            ->selectRaw('SUM(COALESCE(customer_deals.final_revenue, 0)) as revenue')
             ->whereNotNull('customer_deals.deposit_date')
             ->whereBetween('customer_deals.deposit_date', [$from->toDateString(), $to->toDateString()]);
 
@@ -450,7 +450,7 @@ class DashboardController extends Controller
             ->join('users', 'users.id', '=', 'customer_deals.closer_user_id')
             ->selectRaw('users.id as user_id, users.name as user_name')
             ->selectRaw('COUNT(customer_deals.id) as total_deals')
-            ->selectRaw('SUM(COALESCE(customer_deals.final_revenue, customer_deals.net_revenue, 0)) as revenue')
+            ->selectRaw('SUM(COALESCE(customer_deals.final_revenue, 0)) as revenue')
             ->whereNotNull('customer_deals.deposit_date')
             ->whereBetween('customer_deals.deposit_date', [$from->toDateString(), $to->toDateString()]);
 
@@ -500,7 +500,7 @@ class DashboardController extends Controller
                 users.name as user_name,
                 users.avatar as avatar,
                 COUNT(customer_deals.id) as total_deals,
-                SUM(COALESCE(customer_deals.final_revenue, customer_deals.net_revenue, 0)) as revenue
+                SUM(COALESCE(customer_deals.final_revenue, 0)) as revenue
             ')
             ->whereNotNull('customer_deals.deposit_date')
             ->whereBetween('customer_deals.deposit_date', [$from->toDateString(), $to->toDateString()]);

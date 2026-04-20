@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\CustomerReportController;
 use App\Http\Controllers\Api\RevenueReportController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\AssignmentStatusReportController;
 
 Route::post('/login', [AuthController::class, 'login']);
 Route::get('/lead-sources', [LeadSourceController::class, 'index']);
@@ -30,6 +31,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/customers/{customer}/status', [CustomerController::class, 'updateStatus']);
     Route::post('/customers/{customer}/assign', [CustomerController::class, 'assign']);
     Route::put('/customers/{customer}/requirement', [CustomerController::class, 'updateRequirement']);
+    Route::post('/customers/{customer}/add-support-sale', [CustomerController::class, 'addSupportSale']);
+    Route::post('/customers/{customer}/change-primary-sale', [CustomerController::class, 'changePrimarySale']);
 
     Route::post('/customers/{customer}/activities', [CustomerActivityController::class, 'store']);
     Route::post('/customers/{customer}/viewings', [ViewingController::class, 'store']);
@@ -109,5 +112,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/tabs', [CustomerReportController::class, 'tabData']);
     });
 
+    Route::prefix('reports/assignment-status')->group(function () {
+    Route::get('/summary', [AssignmentStatusReportController::class, 'summary']);
+    Route::get('/detail', [AssignmentStatusReportController::class, 'detail']);
+});
     
 });

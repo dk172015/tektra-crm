@@ -34,9 +34,12 @@ class CustomerController extends Controller
                 'creator:id,name,email',
                 'leadSource:id,code,name',
                 'assignedUsers:id,name,email',
+                'activeAssignments.user:id,name,email',
                 'requirement',
                 'latestActivity.user:id,name',
                 'priorityMarker:id,name',
+                'primaryAssignment.user:id,name,email',
+                'supportAssignments.user:id,name,email',
             ])
             ->withMax('assignments as last_assignment_at', 'assigned_at')
             ->withMax([
@@ -171,9 +174,12 @@ class CustomerController extends Controller
                 'creator:id,name,email',
                 'leadSource:id,code,name',
                 'assignedUsers:id,name,email',
+                'activeAssignments.user:id,name,email',
                 'requirement',
                 'latestActivity.user:id,name',
                 'priorityMarker:id,name',
+                'primaryAssignment.user:id,name,email',
+                'supportAssignments.user:id,name,email',
             ]),
             201
         );
@@ -187,12 +193,15 @@ class CustomerController extends Controller
             'creator:id,name,email',
             'leadSource:id,code,name',
             'assignedUsers:id,name,email',
+            'activeAssignments.user:id,name,email',
             'requirement',
             'latestActivity.user:id,name',
             'activities.user:id,name',
             'viewings.property:id,building_name,address,district,area,price_per_m2,status',
             'viewings.creator:id,name',
             'priorityMarker:id,name',
+            'primaryAssignment.user:id,name,email',
+            'supportAssignments.user:id,name,email',
         ]);
 
         $lastAssignmentAt = $customer->assignments()->max('assigned_at');
@@ -367,9 +376,12 @@ class CustomerController extends Controller
                 'creator:id,name,email',
                 'leadSource:id,code,name',
                 'assignedUsers:id,name,email',
+                'activeAssignments.user:id,name,email',
                 'requirement',
                 'latestActivity.user:id,name',
                 'priorityMarker:id,name',
+                'primaryAssignment.user:id,name,email',
+                'supportAssignments.user:id,name,email',
             ]),
         ]);
     }
@@ -486,5 +498,40 @@ class CustomerController extends Controller
                 'activity_time' => now(),
             ]);
         }
+    }
+    public function addSupportSale(Request $request, Customer $customer): JsonResponse
+    {
+        $validated = $request->validate([
+            'user_id' => ['required', 'integer', 'exists:users,id'],
+        ]);
+
+        $customer = $this->customerService->addSupportSale(
+            $customer,
+            (int) $validated['user_id'],
+            $request->user()
+        );
+
+        return response()->json([
+            'message' => 'Đã thêm sale phối hợp.',
+            'data' => $customer,
+        ]);
+    }
+
+    public function changePrimarySale(Request $request, Customer $customer): JsonResponse
+    {
+        $validated = $request->validate([
+            'primary_user_id' => ['required', 'integer', 'exists:users,id'],
+        ]);
+
+        $customer = $this->customerService->changePrimarySale(
+            $customer,
+            (int) $validated['primary_user_id'],
+            $request->user()
+        );
+
+        return response()->json([
+            'message' => 'Đã đổi sale chính.',
+            'data' => $customer,
+        ]);
     }
 }

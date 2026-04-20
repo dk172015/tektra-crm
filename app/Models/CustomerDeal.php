@@ -32,6 +32,7 @@ class CustomerDeal extends Model
         'recreated_at',
         'recreated_by',
         'deposit_date',
+        'sales_volume',
     ];
 
     protected $casts = [
@@ -45,7 +46,8 @@ class CustomerDeal extends Model
         'back_fee' => 'decimal:2',
         'net_revenue' => 'decimal:2',
         'final_revenue' => 'decimal:2',
-        'deposit_date' => 'date'
+        'deposit_date' => 'date',
+        'sales_volume' => 'decimal:2',
     ];
 
     public function customer(): BelongsTo

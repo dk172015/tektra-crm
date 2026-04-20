@@ -32,17 +32,16 @@ class CustomerDealController extends Controller
             'has_vat' => ['required', 'boolean'],
             'vat_revenue' => ['nullable', 'numeric', 'min:0'],
             'back_fee' => ['nullable', 'numeric', 'min:0'],
+            'sales_volume' => ['nullable', 'numeric', 'min:0'],
         ]);
         $hasVat = (bool) $validated['has_vat'];
         $brokerage = $validated['brokerage_fee'] ?? 0;
         $vatRevenue = $validated['vat_revenue'] ?? null;
         $backFee = $validated['back_fee'] ?? 0;
 
-        $netRevenue = $hasVat
-            ? ($vatRevenue ?? 0)
-            : $brokerage;
-
-        $finalRevenue = $netRevenue - $backFee;
+        $netRevenue = (float) ($request->input('net_revenue') ?? 0);
+        $finalRevenue = (float) ($request->input('final_revenue') ?? 0);
+        $sales_volume = $validated['sales_volume'] ?? 0;
         $actor = $request->user();
 
         $closerUserId = $actor->isAdmin()
@@ -76,6 +75,7 @@ class CustomerDealController extends Controller
             'final_revenue' => $finalRevenue,
             'status' => 'won',
             'signed_at' => now(),
+            'sales_volume' => $sales_volume
         ]);
 
         $oldStatus = $customer->status;
@@ -196,17 +196,16 @@ class CustomerDealController extends Controller
             'has_vat' => ['required', 'boolean'],
             'vat_revenue' => ['nullable', 'numeric', 'min:0'],
             'back_fee' => ['nullable', 'numeric', 'min:0'],
+            'sales_volume' => ['nullable', 'numeric', 'min:0'],
         ]);
         $hasVat = (bool) $validated['has_vat'];
         $brokerage = $validated['brokerage_fee'] ?? 0;
         $vatRevenue = $validated['vat_revenue'] ?? null;
         $backFee = $validated['back_fee'] ?? 0;
 
-        $netRevenue = $hasVat
-            ? ($vatRevenue ?? 0)
-            : $brokerage;
-
-        $finalRevenue = $netRevenue - $backFee;
+        $netRevenue = (float) ($request->input('net_revenue') ?? 0);
+        $finalRevenue = (float) ($request->input('final_revenue') ?? 0);
+        $sales_volume = $validated['sales_volume'] ?? 0;
 
         $deal->update([
             'project_code' => $validated['project_code'] ?? null,
@@ -226,6 +225,7 @@ class CustomerDealController extends Controller
             'back_fee' => $backFee,
             'net_revenue' => $netRevenue,
             'final_revenue' => $finalRevenue,
+            'sales_volume' => $sales_volume
         ]);
 
         $customer->activities()->create([

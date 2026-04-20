@@ -68,12 +68,12 @@ class RevenueReportController extends Controller
         $selfFoundQuery = clone $query;
         $companyLeadQuery = clone $query;
 
-        $revenue = (float) (clone $query)->sum(DB::raw('COALESCE(customer_deals.final_revenue, customer_deals.net_revenue, 0)'));
+        $revenue = (float) (clone $query)->sum(DB::raw('COALESCE(customer_deals.net_revenue, 0)'));
         $dealCount = (int) (clone $query)->count();
 
         $selfFoundRevenue = $selfFoundId
             ? (float) $selfFoundQuery->where('customers.lead_source_id', $selfFoundId)
-                ->sum(DB::raw('COALESCE(customer_deals.final_revenue, customer_deals.net_revenue, 0)'))
+                ->sum(DB::raw('COALESCE(customer_deals.net_revenue, 0)'))
             : 0;
 
         $companyLeadRevenue = $selfFoundId
@@ -82,7 +82,7 @@ class RevenueReportController extends Controller
                     $q->whereNull('customers.lead_source_id')
                         ->orWhere('customers.lead_source_id', '!=', $selfFoundId);
                 })
-                ->sum(DB::raw('COALESCE(customer_deals.final_revenue, customer_deals.net_revenue, 0)'))
+                ->sum(DB::raw('COALESCE(customer_deals.net_revenue, 0)'))
             : $revenue;
 
         $selfFoundDeals = $selfFoundId
@@ -142,7 +142,7 @@ class RevenueReportController extends Controller
             ->selectRaw('users.name as sale_name')
             ->selectRaw('lead_sources.code as lead_source_code')
             ->selectRaw('customer_deals.deposit_date')
-            ->selectRaw('COALESCE(customer_deals.final_revenue, customer_deals.net_revenue, 0) as revenue')
+            ->selectRaw('COALESCE(customer_deals.net_revenue, 0) as revenue')
             ->orderByDesc('customer_deals.deposit_date')
             ->paginate((int) $request->input('per_page', 20));
 

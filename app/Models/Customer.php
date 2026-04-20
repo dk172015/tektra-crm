@@ -62,13 +62,35 @@ class Customer extends Model
         return $this->hasMany(CustomerAssignment::class);
     }
 
+    public function primaryAssignment(): HasOne
+    {
+        return $this->hasOne(CustomerAssignment::class)
+            ->where('is_primary', true)
+            ->latestOfMany('assigned_at');
+    }
+
+    public function supportAssignments(): HasMany
+    {
+        return $this->hasMany(CustomerAssignment::class)
+            ->where('is_primary', false)
+            ->orderByDesc('assigned_at');
+    }
+
     public function assignedUsers(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'customer_assignments')
-            ->withPivot(['is_primary', 'assigned_by', 'assigned_at'])
+            ->withPivot(['role', 'is_active', 'ended_at', 'is_primary', 'assigned_by', 'assigned_at'])
+            ->wherePivot('is_active', true)
             ->withTimestamps();
     }
 
+    public function activeAssignments(): HasMany
+    {
+        return $this->hasMany(CustomerAssignment::class)
+            ->where('is_active', true)
+            ->orderByDesc('is_primary')
+            ->orderByDesc('assigned_at');
+    }
     public function requirement(): HasOne
     {
         return $this->hasOne(CustomerRequirement::class);

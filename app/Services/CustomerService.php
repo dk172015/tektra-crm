@@ -94,7 +94,7 @@ class CustomerService
             abort(403, 'Bạn không có quyền phân công khách hàng.');
         }
 
-        $assignedUsers = array_values(array_unique($assignedUsers));
+        $assignedUsers = array_values(array_unique(array_map('intval', $assignedUsers)));
 
         if (!in_array($primaryUserId, $assignedUsers, true)) {
             throw ValidationException::withMessages([
@@ -103,29 +103,123 @@ class CustomerService
         }
 
         return DB::transaction(function () use ($customer, $assignedUsers, $primaryUserId, $actor) {
-            $oldAssignments = $customer->assignments()->with('user:id,name')->get();
+            $oldAssignments = $customer->assignments()
+                ->with('user:id,name')
+                ->where('is_active', true)
+                ->get();
+
             $oldNames = $oldAssignments->pluck('user.name')->filter()->implode(', ');
 
-            $customer->assignments()->delete();
+            $allAssignments = $customer->assignments()
+                ->orderByDesc('id')
+                ->get();
 
-            foreach ($assignedUsers as $userId) {
+            $currentActiveAssignments = $allAssignments
+                ->where('is_active', true)
+                ->keyBy('user_id');
+
+            $currentActiveUserIds = $currentActiveAssignments->keys()
+                ->map(fn ($id) => (int) $id)
+                ->values()
+                ->all();
+
+            $toDeactivate = array_diff($currentActiveUserIds, $assignedUsers);
+            $toActivateOrKeep = $assignedUsers;
+
+            // 1) Tắt những sale không còn trong danh sách mới
+            if (!empty($toDeactivate)) {
+                CustomerAssignment::query()
+                    ->where('customer_id', $customer->id)
+                    ->whereIn('user_id', $toDeactivate)
+                    ->where('is_active', true)
+                    ->update([
+                        'is_active' => false,
+                        'is_primary' => false,
+                        'ended_at' => now(),
+                    ]);
+            }
+
+            // 2) Với từng sale trong danh sách mới:
+            foreach ($toActivateOrKeep as $userId) {
+                $userId = (int) $userId;
+
+                $activeRow = CustomerAssignment::query()
+                    ->where('customer_id', $customer->id)
+                    ->where('user_id', $userId)
+                    ->where('is_active', true)
+                    ->latest('id')
+                    ->first();
+
+                if ($activeRow) {
+                    $activeRow->update([
+                        'is_primary' => $userId === (int) $primaryUserId,
+                        'ended_at' => null,
+                    ]);
+                    continue;
+                }
+
+                // Không có active row -> tìm row cũ inactive để bật lại
+                $inactiveRow = CustomerAssignment::query()
+                    ->where('customer_id', $customer->id)
+                    ->where('user_id', $userId)
+                    ->where('is_active', false)
+                    ->latest('id')
+                    ->first();
+
+                if ($inactiveRow) {
+                    $inactiveRow->update([
+                        'is_active' => true,
+                        'is_primary' => $userId === (int) $primaryUserId,
+                        'ended_at' => null,
+                        'assigned_by' => $actor->id,
+                        'assigned_at' => now(),
+                    ]);
+                    continue;
+                }
+
+                // Chưa từng có record -> tạo mới
                 CustomerAssignment::create([
                     'customer_id' => $customer->id,
                     'user_id' => $userId,
-                    'is_primary' => (int) $userId === $primaryUserId,
+                    'role' => 'main',
+                    'is_active' => true,
+                    'ended_at' => null,
+                    'is_primary' => $userId === (int) $primaryUserId,
                     'assigned_by' => $actor->id,
                     'assigned_at' => now(),
                 ]);
             }
 
-            $newNames = User::whereIn('id', $assignedUsers)->pluck('name')->implode(', ');
-            $primaryName = User::whereKey($primaryUserId)->value('name');
+            // 3) Đảm bảo chỉ có 1 sale chính active
+            CustomerAssignment::query()
+                ->where('customer_id', $customer->id)
+                ->where('is_active', true)
+                ->where('user_id', '!=', $primaryUserId)
+                ->update([
+                    'is_primary' => false,
+                ]);
+
+            CustomerAssignment::query()
+                ->where('customer_id', $customer->id)
+                ->where('user_id', $primaryUserId)
+                ->where('is_active', true)
+                ->update([
+                    'is_primary' => true,
+                ]);
+
+            $newAssignments = $customer->assignments()
+                ->with('user:id,name')
+                ->where('is_active', true)
+                ->get();
+
+            $newNames = $newAssignments->pluck('user.name')->filter()->implode(', ');
+            $primaryName = $newAssignments->firstWhere('is_primary', true)?->user?->name ?? null;
 
             CustomerActivity::create([
                 'customer_id' => $customer->id,
                 'user_id' => $actor->id,
                 'type' => 'assignment_change',
-                'content' => "Điều chỉnh phân công. Trước: [{$oldNames}] | Sau: [{$newNames}] | Sale chính: {$primaryName}",
+                'content' => "Điều chỉnh phân công.\nTrước: [{$oldNames}] | Sau: [{$newNames}] | Sale chính: {$primaryName}",
                 'activity_time' => now(),
             ]);
 
@@ -133,6 +227,7 @@ class CustomerService
                 'creator:id,name',
                 'leadSource:id,code,name',
                 'assignedUsers:id,name,email',
+                'assignments.user:id,name,email',
                 'requirement',
             ]);
         });
@@ -166,6 +261,135 @@ class CustomerService
             'creator:id,name',
             'leadSource:id,code,name',
             'assignedUsers:id,name,email',
+            'requirement',
+        ]);
+    }
+    public function addSupportSale(Customer $customer, int $userId, User $actor): Customer
+    {
+        if (!$actor->isAdmin()) {
+            abort(403, 'Bạn không có quyền thêm sale phối hợp.');
+        }
+
+        $active = $customer->assignments()
+            ->where('user_id', $userId)
+            ->where('is_active', true)
+            ->first();
+
+        if ($active) {
+            throw ValidationException::withMessages([
+                'user_id' => 'Sale này đang phụ trách khách hàng.',
+            ]);
+        }
+
+        $inactive = $customer->assignments()
+            ->where('user_id', $userId)
+            ->where('is_active', false)
+            ->latest('id')
+            ->first();
+
+        if ($inactive) {
+            $inactive->update([
+                'is_active' => true,
+                'is_primary' => false,
+                'ended_at' => null,
+                'assigned_by' => $actor->id,
+                'assigned_at' => now(),
+            ]);
+        } else {
+            CustomerAssignment::create([
+                'customer_id' => $customer->id,
+                'user_id' => $userId,
+                'role' => 'main',
+                'is_active' => true,
+                'ended_at' => null,
+                'is_primary' => false,
+                'assigned_by' => $actor->id,
+                'assigned_at' => now(),
+            ]);
+        }
+
+        CustomerActivity::create([
+            'customer_id' => $customer->id,
+            'user_id' => $actor->id,
+            'type' => 'assignment_change',
+            'content' => 'Thêm sale phối hợp.',
+            'activity_time' => now(),
+        ]);
+
+        return $customer->fresh([
+            'creator:id,name',
+            'leadSource:id,code,name',
+            'assignedUsers:id,name,email',
+            'assignments.user:id,name,email',
+            'requirement',
+        ]);
+    }
+
+    public function changePrimarySale(Customer $customer, int $primaryUserId, User $actor): Customer
+    {
+        if (!$actor->isAdmin()) {
+            abort(403, 'Bạn không có quyền đổi sale chính.');
+        }
+
+        DB::transaction(function () use ($customer, $primaryUserId, $actor) {
+            $activeTarget = $customer->assignments()
+                ->where('user_id', $primaryUserId)
+                ->where('is_active', true)
+                ->first();
+
+            if (!$activeTarget) {
+                $inactiveTarget = $customer->assignments()
+                    ->where('user_id', $primaryUserId)
+                    ->where('is_active', false)
+                    ->latest('id')
+                    ->first();
+
+                if ($inactiveTarget) {
+                    $inactiveTarget->update([
+                        'is_active' => true,
+                        'ended_at' => null,
+                        'assigned_by' => $actor->id,
+                        'assigned_at' => now(),
+                    ]);
+                } else {
+                    CustomerAssignment::create([
+                        'customer_id' => $customer->id,
+                        'user_id' => $primaryUserId,
+                        'role' => 'main',
+                        'is_active' => true,
+                        'ended_at' => null,
+                        'is_primary' => false,
+                        'assigned_by' => $actor->id,
+                        'assigned_at' => now(),
+                    ]);
+                }
+            }
+
+            $customer->assignments()
+                ->where('is_active', true)
+                ->update(['is_primary' => false]);
+
+            $customer->assignments()
+                ->where('user_id', $primaryUserId)
+                ->where('is_active', true)
+                ->update(['is_primary' => true]);
+
+            $primaryName = User::whereKey($primaryUserId)->value('name');
+
+            CustomerActivity::create([
+                'customer_id' => $customer->id,
+                'user_id' => $actor->id,
+                'type' => 'assignment_change',
+                'content' => "Đổi sale chính thành {$primaryName}.",
+                'activity_time' => now(),
+            ]);
+        });
+
+        return $customer->fresh([
+            'creator:id,name',
+            'leadSource:id,code,name',
+            'assignedUsers:id,name,email',
+            'assignments.user:id,name,email',
             'requirement',
         ]);
     }
