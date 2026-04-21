@@ -45,24 +45,22 @@ class AssignmentStatusReportController extends Controller
         [$from, $to] = $this->getMonthRange($request);
         $selfFoundId = $this->selfFoundLeadSourceId();
 
-        $query = DB::table('users')
+        $salesQuery = DB::table('users')
             ->select('id', 'name')
             ->whereIn('role', ['admin', 'leader', 'sale']);
 
         if (!$this->isPrivileged($user)) {
-            $query->where('id', $user->id);
-        } elseif ($request->filled('sale_id')) {
-            $query->where('id', $request->sale_id);
+            $salesQuery->where('id', $user->id);
         }
 
-        $sales = $query->get();
+        $sales = $salesQuery->get();
 
         $rows = [];
 
         foreach ($sales as $sale) {
             $saleId = $sale->id;
 
-            // ===== MAIN =====
+            // MAIN
             $main = DB::table('customer_assignments as ca')
                 ->join('customers', 'customers.id', '=', 'ca.customer_id')
                 ->where('ca.user_id', $saleId)
@@ -78,9 +76,8 @@ class AssignmentStatusReportController extends Controller
 
             $mainCompany = $mainTotal - $mainSelf;
 
-            // ===== SUPPORT =====
+            // SUPPORT
             $support = DB::table('customer_assignments as ca')
-                ->join('customers', 'customers.id', '=', 'ca.customer_id')
                 ->where('ca.user_id', $saleId)
                 ->where('ca.is_active', 1)
                 ->where('ca.is_primary', 0)
@@ -88,13 +85,7 @@ class AssignmentStatusReportController extends Controller
 
             $supportTotal = (clone $support)->distinct()->count('ca.customer_id');
 
-            $supportSelf = $selfFoundId
-                ? (clone $support)->where('customers.lead_source_id', $selfFoundId)->distinct()->count('ca.customer_id')
-                : 0;
-
-            $supportCompany = $supportTotal - $supportSelf;
-
-            // ===== EVER ASSIGNED =====
+            // EVER
             $ever = DB::table('customer_assignments as ca')
                 ->join('customers', 'customers.id', '=', 'ca.customer_id')
                 ->where('ca.user_id', $saleId)
@@ -108,9 +99,8 @@ class AssignmentStatusReportController extends Controller
 
             $companyTotal = $everTotal - $selfFoundTotal;
 
-            // ===== TRANSFERRED =====
+            // TRANSFERRED
             $transferred = DB::table('customer_assignments as ca')
-                ->join('customers', 'customers.id', '=', 'ca.customer_id')
                 ->where('ca.user_id', $saleId)
                 ->where('ca.is_active', 0)
                 ->whereBetween('ca.ended_at', [$from, $to]);
@@ -125,6 +115,9 @@ class AssignmentStatusReportController extends Controller
                 'company_assigned_total' => $companyTotal,
 
                 'current_main_total' => $mainTotal,
+                'current_main_self_found' => $mainSelf,
+                'current_main_company' => $mainCompany,
+
                 'current_support_total' => $supportTotal,
 
                 'transferred_out_total' => $transferredTotal,
@@ -138,6 +131,7 @@ class AssignmentStatusReportController extends Controller
                 'self_found_total' => collect($rows)->sum('self_found_total'),
                 'company_assigned_total' => collect($rows)->sum('company_assigned_total'),
                 'current_main_total' => collect($rows)->sum('current_main_total'),
+                'current_main_company' => collect($rows)->sum('current_main_company'),
                 'current_support_total' => collect($rows)->sum('current_support_total'),
                 'transferred_out_total' => collect($rows)->sum('transferred_out_total'),
                 'ever_assigned_total' => collect($rows)->sum('ever_assigned_total'),

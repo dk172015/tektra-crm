@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\CustomerReportController;
 use App\Http\Controllers\Api\RevenueReportController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AssignmentStatusReportController;
+use App\Http\Controllers\Api\PerformanceScoreController;
 
 Route::post('/login', [AuthController::class, 'login']);
 Route::get('/lead-sources', [LeadSourceController::class, 'index']);
@@ -113,8 +114,12 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('reports/assignment-status')->group(function () {
-    Route::get('/summary', [AssignmentStatusReportController::class, 'summary']);
-    Route::get('/detail', [AssignmentStatusReportController::class, 'detail']);
-});
+        Route::get('/summary', [AssignmentStatusReportController::class, 'summary']);
+        Route::get('/detail', [AssignmentStatusReportController::class, 'detail']);
+    });
+    
+    Route::prefix('reports/performance-score')->group(function () {
+        Route::get('/', [PerformanceScoreController::class, 'index']);
+    });
     
 });
