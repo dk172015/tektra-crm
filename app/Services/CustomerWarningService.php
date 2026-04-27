@@ -27,10 +27,10 @@ class CustomerWarningService
         $warningLevel = null;
         $lockedByAdmin = false;
 
-        if ($days >= 3) {
+        if ($days >= 4) {
             $warningLevel = 'red';
             $lockedByAdmin = true;
-        } elseif ($days >= 2) {
+        } elseif ($days >= 3) {
             $warningLevel = 'yellow';
         }
 
